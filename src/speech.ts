@@ -4,6 +4,7 @@ interface SpeechState {
   readonly isSupported: boolean;
   isSpeaking: boolean;
   voices: SpeechSynthesisVoice[];
+  voiceMap: Map<string, SpeechSynthesisVoice> | null;
   selectedVoice: string | null;
   speak: (text: string) => void;
   stop: () => void;
@@ -15,20 +16,28 @@ const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined
 
 const readVoices = (): SpeechSynthesisVoice[] => (synth ? synth.getVoices() : []);
 
+const createVoiceMap = (voices: SpeechSynthesisVoice[]): Map<string, SpeechSynthesisVoice> => {
+  const map = new Map<string, SpeechSynthesisVoice>();
+  voices.forEach(voice => {
+    map.set(voice.voiceURI, voice);
+  });
+  return map;
+};
+
 export const useSpeechStore = create<SpeechState>((set, get) => ({
   isSupported: Boolean(synth),
   isSpeaking: false,
   voices: readVoices(),
+  voiceMap: null,
   selectedVoice: null,
   speak: (text) => {
     if (!text.trim()) return;
     if (!synth) return;
 
     const utterance = new SpeechSynthesisUtterance(text);
-    const voices = get().voices;
-    const voiceId = get().selectedVoice;
-    if (voiceId) {
-      const voice = voices.find((entry) => entry.voiceURI === voiceId);
+    const { voiceMap, selectedVoice } = get();
+    if (selectedVoice && voiceMap) {
+      const voice = voiceMap.get(selectedVoice);
       if (voice) {
         utterance.voice = voice;
       }
@@ -48,7 +57,11 @@ export const useSpeechStore = create<SpeechState>((set, get) => ({
     set({ isSpeaking: false });
   },
   setVoice: (voiceId) => set({ selectedVoice: voiceId }),
-  refreshVoices: () => set({ voices: readVoices() }),
+  refreshVoices: () => {
+    const voices = readVoices();
+    const voiceMap = createVoiceMap(voices);
+    set({ voices, voiceMap });
+  },
 }));
 
 export const initializeSpeech = () => {
@@ -56,10 +69,12 @@ export const initializeSpeech = () => {
 
   const updateVoices = () => {
     const voices = readVoices();
+    const voiceMap = createVoiceMap(voices);
     useSpeechStore.setState((state) => ({
       voices,
+      voiceMap,
       selectedVoice:
-        state.selectedVoice && voices.some((voice) => voice.voiceURI === state.selectedVoice)
+        state.selectedVoice && voiceMap.has(state.selectedVoice)
           ? state.selectedVoice
           : voices[0]?.voiceURI ?? null,
     }));
